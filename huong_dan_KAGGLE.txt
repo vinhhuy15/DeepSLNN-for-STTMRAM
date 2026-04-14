@@ -1,0 +1,87 @@
+#FILE NÀY LÀ FILE HƯỚNG DẪN SỬ DỤNG Kaggle ĐỂ TRAIN CHO NHANH 
+
+BƯỚC 1 : COPPY CODE SAU VÀO Ô CELL ĐỂ ĐỌC DỮ LIỆU NẠP VÀO 
+import os
+import shutil
+
+# Khai báo thư mục gốc của Kaggle
+input_base = '/kaggle/input'
+working_dir = '/kaggle/working'
+actual_input_dir = None
+
+# Tự động quét tìm thư mục chứa file output.txt của bạn
+for root, dirs, files in os.walk(input_base):
+    if 'output.txt' in files:
+        actual_input_dir = root
+        break
+
+if actual_input_dir:
+    print(f"Đã tìm thấy thư mục code tại: {actual_input_dir}\n")
+    print("Đang tiến hành copy...\n")
+    
+    # Bắt đầu copy
+    for filename in os.listdir(actual_input_dir):
+        full_file_name = os.path.join(actual_input_dir, filename)
+        if os.path.isfile(full_file_name):
+            shutil.copy(full_file_name, working_dir)
+            print(f"✔️ Đã copy: {filename}")
+            
+    print("\n[HOÀN TẤT]Chuyển xuống ô dưới chạy lệnh !python simulate_slnn.py nha!")
+else:
+    print("❌ Không tìm thấy dataset!Thử Refresh (F5) lại trang web nhé.")
+
+
+BƯỚC 2 :CHẠY CODE TRAIN DỮ LIỆU 
+!python simulate_slnn.py
+
+
+
+BƯỚC 3: VẼ ĐỒ THỊ ĐỂ XEM 
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+
+# 1. Đường dẫn tới file CSV bạn vừa chạy ra
+csv_path = '/kaggle/working/BER_Euclidean_vs_Deep_SLNN.csv'
+
+# Kiểm tra xem file có tồn tại không
+if not os.path.exists(csv_path):
+    print("❌ Không tìm thấy file CSV! Nhơn kiểm tra lại xem đã chạy xong mô phỏng chưa nhé.")
+else:
+    # 2. Đọc dữ liệu bằng Pandas
+    df = pd.read_csv(csv_path)
+
+    # 3. Khởi tạo khung đồ thị
+    plt.figure(figsize=(10, 6))
+
+    # 4. Vẽ 2 đường BER
+    # Đường Euclidean (màu đỏ, viền tròn)
+    plt.plot(df['sigma_pct'], df['euc_BER'], 
+             marker='o', linestyle='-', color='red', linewidth=2, label='Euclidean Decoder')
+    
+    # Đường Deep SLNN (màu xanh dương, viền vuông)
+    plt.plot(df['sigma_pct'], df['slnn_BER'], 
+             marker='s', linestyle='-', color='blue', linewidth=2, label='Deep SLNN Decoder')
+
+    # 5. Định dạng trục Y theo thang Log (Chuẩn đồ thị viễn thông)
+    plt.yscale('log')
+
+    # 6. Trang trí đồ thị cho "chuẩn bài báo khoa học"
+    plt.title('So sánh Bit Error Rate (BER): Euclidean vs Deep SLNN', fontsize=14, fontweight='bold')
+    plt.xlabel('Tỷ lệ nhiễu $\sigma/\mu$ (%)', fontsize=12)
+    plt.ylabel('Bit Error Rate (BER)', fontsize=12)
+    
+    # Bật lưới (grid) cả nét đứt và nét liền cho dễ nhìn thang log
+    plt.grid(True, which="major", ls="-", alpha=0.6)
+    plt.grid(True, which="minor", ls="--", alpha=0.3)
+    
+    plt.legend(fontsize=12)
+
+    # 7. Lưu hình ảnh chất lượng cao (300 dpi) để chèn Word/PowerPoint
+    output_image = '/kaggle/working/BER_Comparison_Chart.png'
+    plt.savefig(output_image, dpi=300, bbox_inches='tight')
+    
+    # Hiển thị luôn trên Kaggle
+    plt.show()
+    
+    print(f"\n[HOÀN TẤT] Đã vẽ xong! Nhơn tải ảnh tại: {output_image}")

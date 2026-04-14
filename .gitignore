@@ -1,0 +1,24 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Build/check artifacts
+.pytest_cache/
+.mypy_cache/
+
+# Simulation outputs and checkpoints
+*.pt
+*.npy
+*.csv
+*.png
