@@ -14,14 +14,14 @@ def _as_long_tensor(x) -> torch.Tensor:
 
 
 # ───────────────────────────────────────────────────────────────────────────
-# KIẾN TRÚC MẠNG BASELINE SLNN (9 -> 128 -> 64 -> 128)
+# KIẾN TRÚC MẠNG BASELINE SLNN (9 -> 128 -> 128 -> 128)
 # ───────────────────────────────────────────────────────────────────────────
 class DeepSLNNNumpy(nn.Module):
     def __init__(
         self,
         input_size: int = 9,
         h1: int = 128,
-        h2: int = 64,
+        h2: int = 128,
         output_size: int = 128,
         lr: float = 0.01,
         output_mode: str = "softmax",
@@ -86,7 +86,7 @@ def train_slnn(
     P1: float,
     nr_train: int = 1_500_000,
     h1: int = 128,
-    h2: int = 64,
+    h2: int = 128,
     epochs: int = 30,
     batch_size: int = 256,
     lr: float = 0.01,
@@ -105,9 +105,9 @@ def train_slnn(
 
     if verbose:
         print(f"\n{'='*70}")
-        print(f"[DEEP SLNN TRAIN] BASELINE NETWORK (9->128->64->128)")
+        print(f"[DEEP SLNN TRAIN] BASELINE NETWORK (9->128->128->128)")
         print(f"  Loss: CrossEntropy")
-        print(f"  Data Augmentation: offset_mu (-0.3 to 0.3) & offset_sigma (0~0.05)")
+        print(f"  Data Augmentation: offset_mu (-0.25 to -0.15) & offset_sigma (0~0.05)")
         print(f"  No ALPHA for SLNN (Learn raw data)")
         print(f"{'='*70}")
 
@@ -123,7 +123,7 @@ def train_slnn(
             current_chunk = min(chunk_size, per - i)
             lbl = np.random.randint(0, 128, current_chunk)
 
-            random_offset_mu = np.random.uniform(-0.3, 0.3)
+            random_offset_mu = np.random.uniform(-0.25, -0.15)
             random_offset_sigma = np.random.uniform(0.0, 0.05)
 
             rx = channel_fn(
@@ -256,7 +256,7 @@ def load_slnn(path: str) -> DeepSLNNNumpy:
     data = torch.load(path, map_location="cpu")
     model = DeepSLNNNumpy(
         input_size=int(data.get("input_size", 9)), h1=int(data.get("h1", 128)),
-        h2=int(data.get("h2", 64)), output_size=int(data.get("output_size", 128)),
+        h2=int(data.get("h2", 128)), output_size=int(data.get("output_size", 128)),
         lr=float(data.get("lr", 0.01)), output_mode="softmax",
     )
     model.load_state_dict(data["state_dict"])
