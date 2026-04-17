@@ -14,14 +14,14 @@ def _as_long_tensor(x) -> torch.Tensor:
 
 
 # ───────────────────────────────────────────────────────────────────────────
-# KIẾN TRÚC MẠNG BASELINE SLNN (9 -> 128 -> 128 -> 128)
+# KIẾN TRÚC MẠNG BASELINE SLNN (9 -> 128 -> 64 -> 128)
 # ───────────────────────────────────────────────────────────────────────────
 class DeepSLNNNumpy(nn.Module):
     def __init__(
         self,
         input_size: int = 9,
         h1: int = 128,
-        h2: int = 128,
+        h2: int = 64,
         output_size: int = 128,
         lr: float = 0.01,
         output_mode: str = "softmax",
@@ -36,8 +36,10 @@ class DeepSLNNNumpy(nn.Module):
         self.output_mode = "softmax"
 
         self.fc1 = nn.Linear(input_size, h1)
+        self.bn1 = nn.BatchNorm1d(h1)
         self.act1 = nn.LeakyReLU(negative_slope=0.01)
         self.fc2 = nn.Linear(h1, h2)
+        self.bn2 = nn.BatchNorm1d(h2)
         self.act2 = nn.LeakyReLU(negative_slope=0.01)
         self.fc3 = nn.Linear(h2, output_size)
 
@@ -50,20 +52,30 @@ class DeepSLNNNumpy(nn.Module):
     def _reset_parameters(self) -> None:
         nn.init.kaiming_normal_(self.fc1.weight, nonlinearity="leaky_relu")
         nn.init.zeros_(self.fc1.bias)
+        nn.init.ones_(self.bn1.weight)
+        nn.init.zeros_(self.bn1.bias)
         nn.init.kaiming_normal_(self.fc2.weight, nonlinearity="leaky_relu")
         nn.init.zeros_(self.fc2.bias)
+        nn.init.ones_(self.bn2.weight)
+        nn.init.zeros_(self.bn2.bias)
         nn.init.kaiming_normal_(self.fc3.weight, nonlinearity="leaky_relu")
         nn.init.zeros_(self.fc3.bias)
 
     def _logits(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
+        x = self.bn1(x)
         x = self.act1(x)
         x = self.fc2(x)
+        x = self.bn2(x)
         x = self.act2(x)
         return self.fc3(x)
 
+    def _device(self) -> torch.device:
+        return next(self.parameters()).device
+
     def forward(self, x):
-        x_tensor = _as_float_tensor(x) if not torch.is_tensor(x) else x.float()
+        device = self._device()
+        x_tensor = _as_float_tensor(x).to(device) if not torch.is_tensor(x) else x.float().to(device)
         logits = self._logits(x_tensor)
         return torch.softmax(logits, dim=1)
 
@@ -71,7 +83,7 @@ class DeepSLNNNumpy(nn.Module):
         self.eval()
         with torch.no_grad():
             out = self.forward(x)
-            return torch.argmax(out, dim=1).cpu().numpy()
+            return torch.argmax(out, dim=1).detach().cpu().numpy()
 
     def normalize(self, x: np.ndarray) -> np.ndarray:
         return (x - self.norm_mu) / (self.norm_std + 1e-8)
@@ -86,7 +98,7 @@ def train_slnn(
     P1: float,
     nr_train: int = 1_500_000,
     h1: int = 128,
-    h2: int = 128,
+    h2: int = 64,
     epochs: int = 30,
     batch_size: int = 256,
     lr: float = 0.01,
@@ -105,9 +117,9 @@ def train_slnn(
 
     if verbose:
         print(f"\n{'='*70}")
-        print(f"[DEEP SLNN TRAIN] BASELINE NETWORK (9->128->128->128)")
+        print(f"[DEEP SLNN TRAIN] BASELINE NETWORK (9->128->64->128)")
         print(f"  Loss: CrossEntropy")
-        print(f"  Data Augmentation: offset_mu (-0.25 to -0.15) & offset_sigma (0~0.05)")
+        print(f"  Data Augmentation: offset_mu (-0.3 to 0.0) & offset_sigma (0~0.05)")
         print(f"  No ALPHA for SLNN (Learn raw data)")
         print(f"{'='*70}")
 
@@ -123,7 +135,7 @@ def train_slnn(
             current_chunk = min(chunk_size, per - i)
             lbl = np.random.randint(0, 128, current_chunk)
 
-            random_offset_mu = np.random.uniform(-0.25, -0.15)
+            random_offset_mu = np.random.uniform(-0.3, 0.0)
             random_offset_sigma = np.random.uniform(0.0, 0.05)
 
             rx = channel_fn(
@@ -153,14 +165,16 @@ def train_slnn(
     model = DeepSLNNNumpy(input_size=9, h1=h1, h2=h2, output_size=128, lr=lr, output_mode="softmax")
     model.norm_mu = 1.5
     model.norm_std = 0.5
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if verbose:
+        print(f"  Device: {device}")
     model.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    y_tr_tensor = _as_long_tensor(y_tr)
-    y_val_tensor = _as_long_tensor(y_val)
-    X_tr_tensor = _as_float_tensor(X_tr)
-    X_val_tensor = _as_float_tensor(X_val)
+    y_tr_tensor = _as_long_tensor(y_tr).to(device)
+    y_val_tensor = _as_long_tensor(y_val).to(device)
+    X_tr_tensor = _as_float_tensor(X_tr).to(device)
+    X_val_tensor = _as_float_tensor(X_val).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=lr_decay_every, gamma=lr_decay_rate) if lr_decay_every > 0 else None
@@ -171,7 +185,7 @@ def train_slnn(
 
     for ep in range(epochs):
         model.train()
-        perm_ep = torch.randperm(X_tr_tensor.shape[0])
+        perm_ep = torch.randperm(X_tr_tensor.shape[0], device=device)
         X_s = X_tr_tensor[perm_ep]
         y_s = y_tr_tensor[perm_ep]
 
@@ -179,8 +193,8 @@ def train_slnn(
         n_batches = 0
 
         for i in range(0, X_s.shape[0], batch_size):
-            xb = X_s[i : i + batch_size].to(device)
-            yb = y_s[i : i + batch_size].to(device)
+            xb = X_s[i : i + batch_size]
+            yb = y_s[i : i + batch_size]
 
             optimizer.zero_grad(set_to_none=True)
             logits = model._logits(xb)
@@ -195,10 +209,10 @@ def train_slnn(
 
         model.eval()
         with torch.no_grad():
-            val_logits = model._logits(X_val_tensor.to(device))
-            val_loss = float(criterion(val_logits, y_val_tensor.to(device)).item())
+            val_logits = model._logits(X_val_tensor)
+            val_loss = float(criterion(val_logits, y_val_tensor).item())
             val_probs = torch.softmax(val_logits, dim=1)
-            val_acc = float((torch.argmax(val_probs, dim=1) == y_val_tensor.to(device)).float().mean().item())
+            val_acc = float((torch.argmax(val_probs, dim=1) == y_val_tensor).float().mean().item())
 
         model.history["train_loss"].append(avg_train)
         model.history["val_loss"].append(val_loss)
@@ -253,10 +267,15 @@ def save_slnn(model: DeepSLNNNumpy, path: str) -> None:
     print(f"[SLNN] Saved model -> {path}")
 
 def load_slnn(path: str) -> DeepSLNNNumpy:
-    data = torch.load(path, map_location="cpu")
+    try:
+        # Safer loading path for PyTorch >= 2.5 and avoids FutureWarning.
+        data = torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:
+        # Backward compatibility for older PyTorch versions.
+        data = torch.load(path, map_location="cpu")
     model = DeepSLNNNumpy(
         input_size=int(data.get("input_size", 9)), h1=int(data.get("h1", 128)),
-        h2=int(data.get("h2", 128)), output_size=int(data.get("output_size", 128)),
+        h2=int(data.get("h2", 64)), output_size=int(data.get("output_size", 128)),
         lr=float(data.get("lr", 0.01)), output_mode="softmax",
     )
     model.load_state_dict(data["state_dict"])
